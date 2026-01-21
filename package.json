@@ -4,7 +4,8 @@
     "private": true,
     "description": "Open git diff in VSCode diff editor",
     "bin": {
-        "vsd": "dist/index.js"
+        "vsd": "dist/index.js",
+        "biome": "biome check --write"
     },
     "type": "module",
     "scripts": {
@@ -16,6 +17,7 @@
         "execa": "^8.0.1"
     },
     "devDependencies": {
+        "@biomejs/biome": "^2.3.11",
         "@types/node": "^22.0.0",
         "typescript": "^5.5.4"
     }
