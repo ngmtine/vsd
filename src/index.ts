@@ -1,9 +1,9 @@
 #!/usr/bin/env node
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { Command } from "commander";
 import { execa } from "execa";
-import fs from "node:fs/promises";
-import path from "node:path";
-import os from "node:os";
 
 const NULL_SHA = "0000000000000000000000000000000000000000";
 
@@ -16,7 +16,13 @@ type DiffEntry = {
 };
 
 const program = new Command();
-program.name("vsd").description("Open git diff in VSCode diff editor").option("--staged", "Use staged changes (git diff --staged)").option("--exclude <paths...>", "Exclude paths from diff", []).allowUnknownOption(true).parse(process.argv);
+program
+    .name("vsd")
+    .description("Open git diff in VSCode diff editor")
+    .option("--staged", "Use staged changes (git diff --staged)")
+    .option("--exclude <paths...>", "Exclude paths from diff", [])
+    .allowUnknownOption(true)
+    .parse(process.argv);
 
 const options = program.opts<{ staged?: boolean; exclude?: string[] }>();
 const passthroughArgs = program.args;
@@ -213,7 +219,9 @@ async function readContent(sha: string, filePath: string): Promise<Buffer> {
     }
 
     try {
-        const { stdout } = await execa("git", ["cat-file", "-p", sha], { encoding: null });
+        const { stdout } = await execa("git", ["cat-file", "-p", sha], {
+            encoding: null,
+        });
         return stdout as Buffer;
     } catch {
         return readWorktreeFile(filePath);
@@ -239,13 +247,7 @@ async function writeTempFile(dir: string, name: string, content: Buffer): Promis
     return filePath;
 }
 
-async function resolveRightPath(
-    repoRoot: string,
-    tempDir: string,
-    index: number,
-    filePath: string,
-    sha: string
-): Promise<string> {
+async function resolveRightPath(repoRoot: string, tempDir: string, index: number, filePath: string, sha: string): Promise<string> {
     const absolutePath = filePath ? path.join(repoRoot, filePath) : "";
     if (absolutePath) {
         try {

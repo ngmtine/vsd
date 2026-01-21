@@ -4,13 +4,13 @@
     "private": true,
     "description": "Open git diff in VSCode diff editor",
     "bin": {
-        "vsd": "dist/index.js",
-        "biome": "biome check --write"
+        "vsd": "dist/index.js"
     },
     "type": "module",
     "scripts": {
         "build": "tsc -p tsconfig.json",
-        "prepare": "npm run build"
+        "prepare": "npm run build",
+        "biome": "biome check --write"
     },
     "dependencies": {
         "commander": "^11.1.0",
