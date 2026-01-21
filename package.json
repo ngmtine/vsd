@@ -1,0 +1,22 @@
+{
+    "name": "vsd",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Open git diff in VSCode diff editor",
+    "bin": {
+        "vsd": "dist/index.js"
+    },
+    "type": "module",
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "prepare": "npm run build"
+    },
+    "dependencies": {
+        "commander": "^11.1.0",
+        "execa": "^8.0.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.5.4"
+    }
+}
