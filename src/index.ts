@@ -20,11 +20,12 @@ program
     .name("vsd")
     .description("Open git diff in VSCode diff editor")
     .option("--staged", "Use staged changes (git diff --staged)")
+    .option("--cwd", "Only include changes in the current directory")
     .option("--exclude <paths...>", "Exclude paths from diff", [])
     .allowUnknownOption(true)
     .parse(process.argv);
 
-const options = program.opts<{ staged?: boolean; exclude?: string[] }>();
+const options = program.opts<{ staged?: boolean; cwd?: boolean; exclude?: string[] }>();
 const passthroughArgs = program.args;
 
 async function main(): Promise<void> {
@@ -33,6 +34,9 @@ async function main(): Promise<void> {
     const finalPreArgs = applyStagedFlag(preArgs, options.staged ?? false);
 
     const diffArgs = [...finalPreArgs, "--raw", "-z"];
+    if (options.cwd) {
+        pathspecs.push(".");
+    }
     if (pathspecs.length > 0) {
         diffArgs.push("--", ...pathspecs);
     }
@@ -74,7 +78,7 @@ async function main(): Promise<void> {
     for (let i = 0; i < entries.length; i += 1) {
         const entry = entries[i];
         console.log(formatEntry(entry));
-        const leftContent = await readContent(entry.oldSha, entry.oldPath);
+        const leftContent = await readContent(repoRoot, entry.oldSha, entry.oldPath);
 
         const leftPath = await writeTempFile(tempDir, `left-${i}-${sanitizePath(entry.oldPath || entry.newPath)}`, leftContent);
         const rightPath = await resolveRightPath(repoRoot, tempDir, i, entry.newPath || entry.oldPath, entry.newSha);
@@ -213,7 +217,7 @@ function parseRawDiff(raw: string): DiffEntry[] {
     return entries;
 }
 
-async function readContent(sha: string, filePath: string): Promise<Buffer> {
+async function readContent(repoRoot: string, sha: string, filePath: string): Promise<Buffer> {
     if (!sha || sha === NULL_SHA) {
         return Buffer.alloc(0);
     }
@@ -224,17 +228,17 @@ async function readContent(sha: string, filePath: string): Promise<Buffer> {
         });
         return stdout as Buffer;
     } catch {
-        return readWorktreeFile(filePath);
+        return readWorktreeFile(repoRoot, filePath);
     }
 }
 
-async function readWorktreeFile(filePath: string): Promise<Buffer> {
+async function readWorktreeFile(repoRoot: string, filePath: string): Promise<Buffer> {
     if (!filePath) {
         return Buffer.alloc(0);
     }
 
     try {
-        return await fs.readFile(path.resolve(process.cwd(), filePath));
+        return await fs.readFile(path.resolve(repoRoot, filePath));
     } catch {
         return Buffer.alloc(0);
     }
@@ -258,7 +262,7 @@ async function resolveRightPath(repoRoot: string, tempDir: string, index: number
         }
     }
 
-    const content = await readContent(sha, filePath);
+    const content = await readContent(repoRoot, sha, filePath);
     return writeTempFile(tempDir, `right-${index}-${sanitizePath(filePath)}`, content);
 }
 
