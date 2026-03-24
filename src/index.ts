@@ -5,7 +5,9 @@ import path from "node:path";
 import { Command } from "commander";
 import { execa } from "execa";
 
-const NULL_SHA = "0000000000000000000000000000000000000000";
+function isNullSha(sha: string): boolean {
+    return !sha || /^0+$/.test(sha);
+}
 
 type DiffEntry = {
     oldSha: string;
@@ -35,7 +37,7 @@ async function main(): Promise<void> {
     const excludes = normalizeExcludes(options.exclude ?? []);
     const finalPreArgs = applyStagedFlag(preArgs, options.staged ?? false);
 
-    const diffArgs = [...finalPreArgs, "--raw", "-z"];
+    const diffArgs = [...finalPreArgs, "--raw", "-z", "--no-abbrev"];
     if (options.cwd) {
         pathspecs.push(".");
     }
@@ -247,7 +249,7 @@ function parseRawDiff(raw: string): DiffEntry[] {
 }
 
 async function readContent(repoRoot: string, sha: string, filePath: string): Promise<Buffer> {
-    if (!sha || sha === NULL_SHA) {
+    if (isNullSha(sha)) {
         return Buffer.alloc(0);
     }
 
