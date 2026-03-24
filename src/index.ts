@@ -21,15 +21,17 @@ program
     .description("Open git diff in VSCode diff editor")
     .option("--staged", "Use staged changes (git diff --staged)")
     .option("--cwd", "Only include changes in the current directory")
+    .option("--file <paths...>", "Only include specified file paths", [])
     .option("--exclude <paths...>", "Exclude paths from diff", [])
     .allowUnknownOption(true)
     .parse(process.argv);
 
-const options = program.opts<{ staged?: boolean; cwd?: boolean; exclude?: string[] }>();
+const options = program.opts<{ staged?: boolean; cwd?: boolean; file?: string[]; exclude?: string[] }>();
 const passthroughArgs = program.args;
 
 async function main(): Promise<void> {
     const { preArgs, pathspecs } = splitArgs(passthroughArgs);
+    const includes = normalizeIncludes(options.file ?? []);
     const excludes = normalizeExcludes(options.exclude ?? []);
     const finalPreArgs = applyStagedFlag(preArgs, options.staged ?? false);
 
@@ -57,19 +59,19 @@ async function main(): Promise<void> {
     }
 
     const parsedEntries = parseRawDiff(diffResult.stdout);
-    const entries = filterEntries(parsedEntries, excludes);
-    console.log(`entries: ${parsedEntries.length}, after excludes: ${entries.length}`);
+    const entries = filterEntries(parsedEntries, includes, excludes);
+    console.log(`entries: ${parsedEntries.length}, after filters: ${entries.length}`);
     if (entries.length === 0) {
-        await printStagedHintIfNeeded(preArgs, excludes);
-        if (parsedEntries.length > 0 && excludes.length > 0) {
-            console.log("Excluded entries:");
+        await printStagedHintIfNeeded(preArgs, includes, excludes);
+        if (parsedEntries.length > 0 && (includes.length > 0 || excludes.length > 0)) {
+            console.log("Filtered entries:");
             for (const entry of parsedEntries) {
-                if (isExcluded(entry.oldPath, excludes) || isExcluded(entry.newPath, excludes)) {
+                if (isFilteredOut(entry, includes, excludes)) {
                     console.log(`- ${formatEntry(entry)}`);
                 }
             }
         }
-        console.log(excludes.length > 0 ? "No changes (after excludes)." : "No changes.");
+        console.log(includes.length > 0 || excludes.length > 0 ? "No changes (after filters)." : "No changes.");
         return;
     }
 
@@ -104,6 +106,10 @@ function normalizeExcludes(excludes: string[]): string[] {
     return excludes.map((value) => normalizeExclude(value)).filter((value) => value.length > 0);
 }
 
+function normalizeIncludes(includes: string[]): string[] {
+    return includes.map((value) => normalizePath(value.trim())).filter((value) => value.length > 0);
+}
+
 function applyStagedFlag(args: string[], staged: boolean): string[] {
     if (!staged) {
         return [...args];
@@ -118,12 +124,35 @@ function isStagedFlag(arg: string): boolean {
     return arg === "--staged" || arg === "--cached" || arg.startsWith("--staged=") || arg.startsWith("--cached=");
 }
 
-function filterEntries(entries: DiffEntry[], excludes: string[]): DiffEntry[] {
-    if (excludes.length === 0) {
+function filterEntries(entries: DiffEntry[], includes: string[], excludes: string[]): DiffEntry[] {
+    if (includes.length === 0 && excludes.length === 0) {
         return entries;
     }
 
-    return entries.filter((entry) => !isExcluded(entry.oldPath, excludes) && !isExcluded(entry.newPath, excludes));
+    return entries.filter((entry) => !isFilteredOut(entry, includes, excludes));
+}
+
+function isFilteredOut(entry: DiffEntry, includes: string[], excludes: string[]): boolean {
+    const included = includes.length === 0 || isIncluded(entry.oldPath, includes) || isIncluded(entry.newPath, includes);
+    const excluded = isExcluded(entry.oldPath, excludes) || isExcluded(entry.newPath, excludes);
+    return !included || excluded;
+}
+
+function isIncluded(filePath: string, includes: string[]): boolean {
+    if (!filePath) {
+        return false;
+    }
+    const normalized = normalizePath(filePath);
+    const segments = normalized.split("/");
+    return includes.some((include) => {
+        if (!include) {
+            return false;
+        }
+        if (include.includes("/")) {
+            return normalized === include || normalized.endsWith(`/${include}`) || normalized.startsWith(`${include}/`);
+        }
+        return segments.includes(include);
+    });
 }
 
 function normalizeExclude(value: string): string {
@@ -277,7 +306,7 @@ function formatEntry(entry: DiffEntry): string {
     return `${entry.status} ${entry.oldPath} -> ${entry.newPath}`;
 }
 
-async function printStagedHintIfNeeded(preArgs: string[], excludes: string[]): Promise<void> {
+async function printStagedHintIfNeeded(preArgs: string[], includes: string[], excludes: string[]): Promise<void> {
     if (preArgs.some((arg) => isStagedFlag(arg))) {
         return;
     }
@@ -295,7 +324,7 @@ async function printStagedHintIfNeeded(preArgs: string[], excludes: string[]): P
         return;
     }
 
-    const stagedEntries = filterEntries(parseRawDiff(stagedResult.stdout), excludes);
+    const stagedEntries = filterEntries(parseRawDiff(stagedResult.stdout), includes, excludes);
     if (stagedEntries.length === 0) {
         return;
     }
