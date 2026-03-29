@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
 import { execa } from "execa";
+import { minimatch } from "minimatch";
 
 function isNullSha(sha: string): boolean {
     return !sha || /^0+$/.test(sha);
@@ -140,6 +141,10 @@ function isFilteredOut(entry: DiffEntry, includes: string[], excludes: string[])
     return !included || excluded;
 }
 
+function isGlobPattern(pattern: string): boolean {
+    return /[*?[\]{}]/.test(pattern);
+}
+
 function isIncluded(filePath: string, includes: string[]): boolean {
     if (!filePath) {
         return false;
@@ -149,6 +154,9 @@ function isIncluded(filePath: string, includes: string[]): boolean {
     return includes.some((include) => {
         if (!include) {
             return false;
+        }
+        if (isGlobPattern(include)) {
+            return minimatch(normalized, include, { matchBase: true });
         }
         if (include.includes("/")) {
             return normalized === include || normalized.endsWith(`/${include}`) || normalized.startsWith(`${include}/`);
@@ -174,6 +182,9 @@ function isExcluded(filePath: string, excludes: string[]): boolean {
     return excludes.some((exclude) => {
         if (!exclude) {
             return false;
+        }
+        if (isGlobPattern(exclude)) {
+            return minimatch(normalized, exclude, { matchBase: true });
         }
         if (exclude.includes("/")) {
             return normalized === exclude || normalized.startsWith(`${exclude}/`);

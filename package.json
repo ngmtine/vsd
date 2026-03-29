@@ -14,7 +14,8 @@
     },
     "dependencies": {
         "commander": "^11.1.0",
-        "execa": "^8.0.1"
+        "execa": "^8.0.1",
+        "minimatch": "^10.2.4"
     },
     "devDependencies": {
         "@biomejs/biome": "^2.3.11",
