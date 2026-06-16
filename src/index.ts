@@ -26,10 +26,11 @@ program
     .option("--cwd", "Only include changes in the current directory")
     .option("--file <paths...>", "Only include specified file paths", [])
     .option("--exclude <paths...>", "Exclude paths from diff", [])
+    .option("--jobs <n>", "Number of diffs to open in parallel", "8")
     .allowUnknownOption(true)
     .parse(process.argv);
 
-const options = program.opts<{ staged?: boolean; cwd?: boolean; file?: string[]; exclude?: string[] }>();
+const options = program.opts<{ staged?: boolean; cwd?: boolean; file?: string[]; exclude?: string[]; jobs?: string }>();
 const passthroughArgs = program.args;
 
 async function main(): Promise<void> {
@@ -80,18 +81,46 @@ async function main(): Promise<void> {
 
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "vsd-"));
 
-    for (let i = 0; i < entries.length; i += 1) {
-        const entry = entries[i];
+    // 並列化でログが混ざらないよう、開く前に一覧を順序通り出力する
+    for (const entry of entries) {
         console.log(formatEntry(entry));
-        const leftContent = await readContent(repoRoot, entry.oldSha, entry.oldPath);
-
-        const leftPath = await writeTempFile(tempDir, `left-${i}-${sanitizePath(entry.oldPath || entry.newPath)}`, leftContent);
-        const rightPath = await resolveRightPath(repoRoot, tempDir, i, entry.newPath || entry.oldPath, entry.newSha);
-
-        void leftPath;
-        void rightPath;
-        await execa("code", ["--diff", leftPath, rightPath], { stdio: "ignore" });
     }
+
+    const jobs = resolveJobs(options.jobs);
+    await runWithConcurrency(entries, jobs, (entry, i) => openEntry(repoRoot, tempDir, entry, i));
+}
+
+async function openEntry(repoRoot: string, tempDir: string, entry: DiffEntry, index: number): Promise<void> {
+    const leftContent = await readContent(repoRoot, entry.oldSha, entry.oldPath);
+    const leftPath = await writeTempFile(tempDir, `left-${index}-${sanitizePath(entry.oldPath || entry.newPath)}`, leftContent);
+    const rightPath = await resolveRightPath(repoRoot, tempDir, index, entry.newPath || entry.oldPath, entry.newSha);
+    await execa("code", ["--diff", leftPath, rightPath], { stdio: "ignore" });
+}
+
+function resolveJobs(value: string | undefined): number {
+    const parsed = Number.parseInt(value ?? "", 10);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+        return 8;
+    }
+    return parsed;
+}
+
+// 外部依存なしの並列ワーカープール。各ワーカーが先頭からインデックスを取り出すため、
+// code への送信順はほぼ維持される(VSCode 側の完了順は前後しうる)
+async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T, index: number) => Promise<void>): Promise<void> {
+    let cursor = 0;
+    const workerCount = Math.min(limit, items.length);
+    const runners = Array.from({ length: workerCount }, async () => {
+        while (true) {
+            const index = cursor;
+            cursor += 1;
+            if (index >= items.length) {
+                return;
+            }
+            await worker(items[index], index);
+        }
+    });
+    await Promise.all(runners);
 }
 
 function splitArgs(args: string[]): { preArgs: string[]; pathspecs: string[] } {
